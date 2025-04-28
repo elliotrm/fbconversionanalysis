@@ -47,6 +47,6 @@ Nous proposons une exploration :
 
 # Installation et Exécution
 
-1. Cloner ce dépôt : git clone https://github.com/tonprofil/facebook-conversions-dashboard.git
+1. Cloner ce dépôt : git clone https://github.com/elliotrm/fbconversionanalysis.git
 2. Installer les packages R nécessaires (dplyr, ggplot2, randomForest, caret, plotly, DT, kableExtra, ggcorrplot, etc.).
 3. Lancer dashboard_facebook_analysis.Rmd pour visualiser le dashboard.
