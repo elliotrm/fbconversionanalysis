@@ -4,7 +4,7 @@
 
 Ce projet a pour objectif d'analyser les données de conversion publicitaire Facebook à l'aide d'un **dashboard interactif** et de **modèles de machine learning**.
 
-Il a été effectué en anglais puisque c'était un projet dédié pour la matière d'anglais de cette première année de Master MAS
+Il a été effectué en anglais puisque c'était un projet dédié pour la matière d'anglais de cette première année de Master MAS.
 
 Nous proposons une exploration :
 - Des performances publicitaires par genre, âge et campagne,
