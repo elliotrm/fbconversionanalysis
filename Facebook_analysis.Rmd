@@ -1,0 +1,526 @@
+---
+title: "Dashboard - Facebook Conversions Analysis"
+format: 
+  dashboard:
+    orientation: columns
+    logo: "data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32' width='30' height='30'><path fill='%233b5998' d='M16 0C7.164 0 0 7.164 0 16c0 7.875 5.742 14.387 13.25 15.752V20.75H9.313V16h3.937v-3.625c0-3.887 2.313-6.031 5.875-6.031 1.703 0 3.484.313 3.484.313v3.875h-1.969c-1.938 0-2.531 1.203-2.531 2.438V16h4.313l-.688 4.75h-3.625v11.002C26.258 30.39 32 23.877 32 16c0-8.836-7.164-16-16-16z'/></svg>"
+    scrolling: true
+    theme: cosmo
+---
+
+```{r setup, include=FALSE}
+library(ggplot2)
+library(dplyr)
+library(randomForest)
+library(ggcorrplot)
+library(caret)
+library(plotly)
+library(DT)
+library(knitr)
+library(kableExtra)
+library(htmltools)
+
+# Import des données
+facebook_data <- read.csv("data/KAG_conversion_data.csv", sep = ",", dec =".")
+# Préparation des données pour les modèles
+facebook_data_model <- facebook_data
+facebook_data_model$gender <- as.factor(facebook_data_model$gender)
+facebook_data_model$age <- as.factor(facebook_data_model$age)
+facebook_data_model$interest <- as.factor(facebook_data_model$interest)
+
+# Calcul des KPIs
+nombre_lignes <- nrow(facebook_data)
+nombre_variables <- ncol(facebook_data)
+tranche_age <- "30-49 ans"
+
+# Créer un dataframe pour le tableau de description des variables
+description_variables <- data.frame(
+  Variable = c("ad_id", "xyzcampaignid", "fbcampaignid", "age", "gender","interest","Impressions","Clicks","Spent", "Total conversion", "Approved conversion"),
+  Description = c(
+    "an unique ID for each ad", 
+    "an ID associated with each ad campaign of XYZ company", 
+    "an ID associated with how Facebook tracks each campaign",
+    "age of the person to whom the ad is shown",
+    "gender of the person to whom the add is shown",
+    "a code specifying the category to which the person's interest belongs (interests are as mentioned in the person's Facebook public profile)",
+    "the number of times the ad was shown",
+    "number of clicks on for that ad",
+    "amount paid by company xyz to Facebook, to show that ad",
+    "total number of people who enquired about the product after seeing the ad",
+    "total number of people who bought the product after seeing the ad"
+  )
+)
+```
+
+# Home
+
+## Column {width=700}
+
+### {.no-title}
+<div style="background-color: #3b5998; padding: 20px; text-align: center; border-radius: 10px; margin-bottom: 20px;">
+  <img src="www/mark.jpg" style="width: 150px; border-radius: 10px;" alt="Image de Mark Zuckerberg">
+  <h1 style="color: white; margin-top: 15px;">Facebook Conversions Analysis</h1>
+</div>
+
+### KPI {.no-title}
+```{r kpi-cards}
+# Création des cartes KPI avec des tableaux HTML de base
+kpi_html <- paste0('
+<table width="100%">
+  <tr>
+    <td width="33%" align="center">
+      <div style="background-color: white; padding: 15px; border-radius: 10px; box-shadow: 0 4px 8px rgba(0,0,0,0.1); margin: 5px;">
+        <h3 style="color: #3b5998; margin-bottom: 10px;">Number of lines</h3>
+        <h1 style="color: #3b5998;">', nombre_lignes, '</h1>
+      </div>
+    </td>
+    <td width="33%" align="center">
+      <div style="background-color: white; padding: 15px; border-radius: 10px; box-shadow: 0 4px 8px rgba(0,0,0,0.1); margin: 5px;">
+        <h3 style="color: #3b5998; margin-bottom: 10px;">Age range</h3>
+        <h1 style="color: #3b5998;">', tranche_age, '</h1>
+      </div>
+    </td>
+    <td width="33%" align="center">
+      <div style="background-color: white; padding: 15px; border-radius: 10px; box-shadow: 0 4px 8px rgba(0,0,0,0.1); margin: 5px;">
+        <h3 style="color: #3b5998; margin-bottom: 10px;">Number of variables</h3>
+        <h1 style="color: #3b5998;">', nombre_variables, '</h1>
+      </div>
+    </td>
+  </tr>
+</table>
+')
+
+# Affichage du HTML
+htmltools::HTML(kpi_html)
+```
+
+## Column {width=800}
+### Variables description {.no-title}
+<div style="background-color: white; padding: 20px; border-radius: 10px; box-shadow: 0 4px 8px rgba(0,0,0,0.1);">
+  <h2 style="text-align: center; margin-bottom: 20px; color: #3b5998;">Variables Description</h2>
+  
+```{r}
+  # Affichage du tableau de description des variables
+  knitr::kable(description_variables, format = "html") %>%
+    kableExtra::kable_styling(bootstrap_options = c("striped", "hover", "condensed", "responsive"),
+                             full_width = TRUE)
+
+```
+</div>
+
+# Descriptive Statistics
+
+## Column {.tabset}
+
+### Gender And Age
+
+#### Column{width=50%}
+
+##### Distribution of Facebook ads by gender
+```{r}
+p1 <- ggplot(facebook_data, aes(x = gender, fill = gender)) +
+  geom_bar() +
+  geom_text(stat = "count", aes(label = ..count..), vjust = -0.5) +
+  scale_fill_manual(values = c("F" = "#FF69B4", "M" = "#1E90FF")) +
+  labs(
+    title = "Distribution of Facebook ads by gender",
+    x = "Gender",
+    y = "Count"
+  ) +
+  theme_minimal() +
+  theme(
+    plot.title = element_text(
+      hjust = 0.5,  # Centrer le titre
+      size = 14,   # Taille du titre
+      face = "plain",  # Pas de gras
+      family = "Arial", # Police de caractères
+      color = "#636363"   # Couleur du titre en noir
+    ),
+    axis.text.x = element_text(angle = 45, hjust = 1)  # Rotation des étiquettes de l'axe x
+  )
+
+ggplotly(p1)
+
+```
+
+##### Click distribution by gender
+```{r}
+gender_clicks <- facebook_data %>%
+  group_by(gender) %>%
+  summarise(total_clicks = sum(Clicks, na.rm = TRUE)) %>%
+  mutate(perc = total_clicks / sum(total_clicks))
+
+# Couleurs personnalisées : rose et bleu, par exemple
+custom_colors <- c("#FF69B4", "#6495ED")  # rose & bleu
+
+# Camembert interactif
+plot_ly(gender_clicks, labels = ~gender, values = ~total_clicks, type = 'pie',
+        textinfo = 'label+percent',
+        marker = list(colors = custom_colors)) %>%
+  layout(title = "Click distribution by gender",
+         margin = list(l = 20, r = 20, t = 40, b = 20))
+```
+
+
+
+#### Column{width=50%}
+
+##### Age Distribution
+```{r}
+data_bar <- facebook_data %>%
+  group_by(age) %>%
+  summarise(Count = n()) %>%
+  mutate(perc = Count / sum(Count))
+
+color_map <- c(
+  "30-34" = "#00008B",   # Bleu foncé
+  "35-39" = "#4169E1",   # Bleu
+  "40-44" = "#6495ED",   # Bleu clair
+  "45-49" = "#ADD8E6"    # Bleu très clair
+)
+
+# Appliquer la couleur à chaque tranche selon l’ordre dans les données
+colors_assigned <- color_map[data_bar$age]
+
+# Diagramme en barres
+plot_ly(data_bar, 
+        x = ~age, 
+        y = ~Count, 
+        type = 'bar',
+        marker = list(color = colors_assigned)) %>%
+  layout(title = "Distribution of Facebook ads by age",
+         xaxis = list(title = "Age"),
+         yaxis = list(title = "Count"),
+         margin = list(l = 40, r = 20, t = 40, b = 60))
+
+```
+
+##### Clicks by age
+```{r}
+age_clicks <- facebook_data %>%
+  group_by(age) %>%
+  summarise(total_clicks = sum(Clicks, na.rm = TRUE)) %>%
+  mutate(perc = total_clicks / sum(total_clicks))
+
+color_map <- c(
+  "30-34" = "#00008B",   # Bleu foncé
+  "35-39" = "#4169E1",   # Bleu
+  "40-44" = "#6495ED",   # Bleu clair
+  "45-49" = "#ADD8E6"    # Bleu très clair
+)
+
+# Appliquer la couleur à chaque tranche selon l’ordre dans les données
+colors_assigned <- color_map[age_clicks$age]
+
+# Camembert interactif avec couleurs personnalisées
+plot_ly(age_clicks, labels = ~age, values = ~total_clicks, type = 'pie',
+        textinfo = 'label+percent',
+        marker = list(colors = colors_assigned)) %>%
+  layout(title = "Click distribution by age group",
+         margin = list(l = 20, r = 20, t = 40, b = 20))
+```
+### Campaign
+
+#### Row{height=50%}
+
+##### Ad volume by campaign
+```{r}
+# Créer un vecteur de remplacement pour les étiquettes
+id_labels <- c("916" = "A", "936" = "B", "1178" = "C")
+
+# Ajouter des nuances de bleu pour chaque campagne
+campaign_colors <- c("916" = "#00008B", "936" = "#4169E1", "1178" = "#6495ED")
+
+# Créer le graphique avec les étiquettes renommées et des couleurs bleues pour chaque campagne
+p2 <- ggplot(facebook_data, aes(x = factor(xyz_campaign_id), fill = factor(xyz_campaign_id))) +
+  geom_bar() +
+  theme_minimal() +
+  labs(
+    title = "Ad volume by campaign",
+    x = "Campaign ID",
+    y = "Count"
+  ) +
+  # Remplacer les valeurs par les nouvelles étiquettes
+  scale_x_discrete(labels = id_labels) +
+  # Attribuer des couleurs bleues pour chaque campagne
+  scale_fill_manual(values = campaign_colors)
+
+ggplotly(p2)
+
+```
+
+##### Customer Acquisition Cost by Campaign
+```{r}
+# Filtrer les lignes où Approved_Conversion est différent de 0 et calculer le CAC
+facebook_data2 <- facebook_data %>%
+  filter(Approved_Conversion != 0) %>%
+  mutate(CAC = Spent / Approved_Conversion)
+
+campaign_colors <- c("916" = "#00008B", "936" = "#4169E1", "1178" = "#6495ED")
+
+# Calculer le CAC moyen par campagne
+cac_by_campaign <- facebook_data2 %>%
+  group_by(xyz_campaign_id) %>%
+  summarise(CAC_moyen = mean(CAC, na.rm = TRUE))
+
+# Visualiser le CAC moyen par campagne avec un graphique
+g6 <- ggplot(cac_by_campaign, aes(x = factor(xyz_campaign_id), y = CAC_moyen, fill = factor(xyz_campaign_id))) +
+  geom_bar(stat = "identity") +
+  labs(title = "Customer acquisition cost by campaign",
+       x = "Campaign ID",
+       y = "Customer acquisition cost (CAC)") +
+  theme_minimal() +
+  theme(legend.position = "none") +
+   scale_x_discrete(labels = id_labels) +
+  # Attribuer des couleurs bleues pour chaque campagne
+  scale_fill_manual(values = campaign_colors)
+
+ggplotly(g6)
+```
+
+#### Row{heigth=50%}
+
+##### Proportion of Approved vs Non Approved Products by Company
+```{r}
+facebook_data <- facebook_data %>%
+  mutate(approval_status = ifelse(Approved_Conversion > 0, "Approved", "Not Approved"))
+
+# Calculer la proportion de produits approuvés et non approuvés par entreprise
+approval_proportion <- facebook_data %>%
+  group_by(xyz_campaign_id, approval_status) %>%
+  summarise(count = n()) %>%
+  ungroup() %>%
+  group_by(xyz_campaign_id) %>%
+  mutate(proportion = count / sum(count))
+
+# Création du graphique en barres empilées
+# Création du graphique en barres empilées avec noms de campagnes renommés
+g15 <- ggplot(approval_proportion, aes(x = factor(xyz_campaign_id), y = proportion, fill = approval_status)) +
+  geom_bar(stat = "identity") +
+  labs(
+    title = "Proportion of approved vs not approved products by campaign",
+    x = "Campaign ID",
+    y = "Proportion of products",
+    fill = "Approval status"
+  ) +
+  scale_x_discrete(labels = c("916" = "A", "936" = "B", "1178" = "C")) +  # Remplacement des noms de campagne
+  scale_fill_manual(values = c("Approved" = "#4CAF50", "Not approved" = "#F44336")) + 
+  theme_minimal() +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1))
+
+ggplotly(g15)
+```
+
+
+### Correlations 
+
+#### Column{width = 50%}
+##### Correlation between variables
+```{r}
+numeric_vars <- facebook_data %>%
+  select(Impressions, Clicks, Spent, Total_Conversion) %>%
+  cor()
+
+ggcorrplot(numeric_vars, 
+           hc.order = TRUE,
+           type = "lower", 
+           lab = TRUE, 
+           title = "Correlation between numerical variables",
+           colors = c("#3a539b", "white", "#4FC1E9"),
+           outline.color = "white",
+           lab_size = 4,
+           tl.cex = 12) +
+  theme(
+    plot.title = element_text(hjust = 0.5, face = "bold"),
+    panel.background = element_rect(fill = "white")
+  )
+```
+
+##### Spending-conversions relationship
+```{r}
+g5 <- ggplot(facebook_data, aes(x = Approved_Conversion, y = Total_Conversion)) +
+  geom_point(alpha = 0.6, color = "steelblue") +
+  geom_smooth(method = "lm", color = "darkred") +
+  geom_abline(slope = 1, intercept = 0, linetype = "dashed", color = "darkgreen") +
+  labs(title = "Approved conversions vs total conversions",
+       subtitle = "With identity line (x=y) and linear regression",
+       x = "Approved conversions",
+       y = "Total conversions") +
+  theme_minimal()
+
+# Convertir ggplot en plotly
+ggplotly(g5)
+```
+
+
+
+# Random Forest Model
+
+## Column {.tabset}
+
+```{r}
+#Suppression de la variable Approved conversion pour le machine learning
+facebook_data_model <- facebook_data %>% select(-Approved_Conversion)
+
+# Diviser le dataset en échantillons d'entraînement/test (80/20)
+set.seed(123)
+sample_index <- sample(1:nrow(facebook_data_model), 0.8 * nrow(facebook_data_model))
+train_data <- facebook_data_model[sample_index, ]
+test_data <- facebook_data_model[-sample_index, ]
+
+# Entraîner le modèle Random Forest
+model_rf <- randomForest(
+  Total_Conversion ~ .,
+  data = train_data,
+  importance = TRUE,
+  ntree = 500
+)
+
+# Prédiction sur test set
+pred <- predict(model_rf, newdata = test_data)
+results <- data.frame(Observé = test_data$Total_Conversion, Prédit = pred)
+
+# Métriques de performance
+mse <- mean((test_data$Total_Conversion - pred)^2)
+rmse <- sqrt(mse)
+mae <- mean(abs(test_data$Total_Conversion - pred))
+r_squared <- 1 - (sum((test_data$Total_Conversion - pred)^2) / 
+                  sum((test_data$Total_Conversion - mean(test_data$Total_Conversion))^2))
+
+metrics <- data.frame(
+  Metric = c("MSE", "RMSE", "MAE", "R²"),
+  Value = round(c(mse, rmse, mae, r_squared), 4)
+)
+```
+
+### Model Optimization
+
+#### {layout="[[1,1]]"}
+
+##### OOB Error Evolution
+```{r}
+# Extraire les données d'erreur OOB
+oob_error <- data.frame(
+  Trees = 1:model_rf$ntree,
+  Error = model_rf$mse
+)
+
+p_oob <- plot_ly(oob_error, x = ~Trees, y = ~Error, type = 'scatter', mode = 'lines',
+        line = list(color = '#3b5998', width = 2)) %>%
+  layout(title = "OOB error evolution",
+         xaxis = list(title = "Number of trees"),
+         yaxis = list(title = "OOB error"),
+         plot_bgcolor = "#ffffff",
+         paper_bgcolor = "#ffffff")
+
+p_oob
+```
+
+##### Hyperparameter Optimization
+```{r}
+# Tuning des hyperparamètres avec validation croisée simplifiée
+control <- trainControl(method="cv", number=5)
+grid <- expand.grid(mtry=c(2, 3, 4, 5, 6))
+
+rf_gridsearch <- train(
+  Total_Conversion ~ .,
+  data=train_data,
+  method="rf",
+  metric="RMSE",
+  tuneGrid=grid,
+  trControl=control
+)
+
+# Créer un dataframe avec les résultats
+tuning_results <- rf_gridsearch$results
+tuning_results$mtry <- as.factor(tuning_results$mtry)
+
+p_tune <- ggplot(tuning_results, aes(x=mtry, y=RMSE, group=1)) +
+  geom_line(color="#3b5998", size=1) +
+  geom_point(color="#3b5998", size=3) +
+  labs(title = "Hyperparameter optimization (mtry)",
+       x = "mtry parameter",
+       y = "RMSE (Cross-Validation)") +
+  theme_minimal() +
+  theme(
+    plot.title = element_text(hjust = 0.5),
+    panel.background = element_rect(fill = "white"),
+    panel.grid.major = element_line(color = "#f0f0f0"),
+    panel.grid.minor = element_line(color = "#f5f5f5")
+  )
+
+ggplotly(p_tune)
+```
+
+
+
+
+
+### Model Evaluation
+
+#### Column {width=600}
+
+##### Model Performance Metrics
+```{r}
+# Style pour le tableau des métriques
+metrics_styled <- metrics %>%
+  kable("html") %>%
+  kable_styling(bootstrap_options = c("striped", "hover", "condensed"),
+               full_width = FALSE, position = "center") %>%
+  row_spec(0, background = "#3b5998", color = "white", bold = TRUE) %>%
+  column_spec(1:2, border_right = TRUE) %>%
+  add_header_above(c("Random forest model metrics" = 2), background = "#8b9dc3", color = "white")
+
+metrics_styled
+```
+
+#### Column {width=800}
+
+##### Variable Importance
+```{r}
+# Extraire l'importance des variables
+importance_df <- as.data.frame(importance(model_rf))
+importance_df$Variable <- rownames(importance_df)
+importance_df <- importance_df[order(-importance_df$`%IncMSE`),]
+
+# Créer un graphique plus joli avec ggplot
+p_imp <- ggplot(importance_df, aes(x = reorder(Variable, `%IncMSE`), y = `%IncMSE`)) +
+  geom_bar(stat = "identity", fill = "#3b5998") +
+  coord_flip() +
+  labs(title = "Variable importance",
+       x = "",
+       y = "% Increase in MSE") +
+  theme_minimal() +
+  theme(
+    plot.title = element_text(hjust = 0.5, face = "bold"),
+    panel.background = element_rect(fill = "white"),
+    panel.grid.major.y = element_blank(),
+    panel.grid.major.x = element_line(color = "#f0f0f0"),
+    panel.grid.minor = element_line(color = "#f5f5f5")
+  )
+
+ggplotly(p_imp)
+```
+
+
+### Model Performance
+
+#### Predictions vs Observations
+```{r}
+p6 <- ggplot(results, aes(x=Observé, y=Prédit)) +
+  geom_point(alpha=0.6, color="#3b5998") +
+  geom_abline(slope=1, intercept=0, color="#FF6384", linetype="dashed", size=1) +
+  labs(title="Predictions vs Observations",
+       x="Observed values", 
+       y="Predicted values") +
+  theme_minimal() +
+  theme(
+    plot.title = element_text(hjust = 0.5, face = "bold"),
+    panel.background = element_rect(fill = "white"),
+    panel.grid.major = element_line(color = "#f0f0f0"),
+    panel.grid.minor = element_line(color = "#f5f5f5")
+  )
+
+ggplotly(p6)
+```
+
